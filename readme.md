@@ -39,6 +39,18 @@ python smartshark_mining.py --project PROJECT_NAME --path PATH_TO_REPOSITORY --f
 # python smartshark_mining.py --project ant-ivy --path /srv/repos/ant-ivy/ --file-check --label-name JLMIV+R --db-host 127.0.0.1 --db-port 27017 --db-name smartshark --db-user USER --db-pw PW --db-auth smartshark
 ```
 
+If the repository is not existing locally it has to be extracted from the SmartSHARK database. Note that LOCAL_PATH is the base path for the extraction, e.g., /srv/repos/ it does not contain the project name.
+A directory with the project name will be created in the directory containing the snapshot of the repository at the time of data collection.
+
+```bash
+source bin/activate
+python smartshark_dump_repository.py --project PROJECT_NAME --path LOCAL_PATH --db-host SMARTSHARK_MONGODB_HOST --db-port SMARTSHARK_MONGODB_PORT --db-name SMARTSHARK_MONGODB_DATABASE --db-user SMARTSHARK_MONGODB_USER --db-pw SMARTSHARK_MONGODB_PASSWORD --db-auth SMARTSHARK_MONGODB_AUTHENTICATION_SOURCE
+
+# example
+# python smartshark_dump_repository.py --project ant-ivy --path /srv/repos/ --db-host 127.0.0.1 --db-port 27017 --db-name smartshark --db-user USER --db-pw PW --db-auth smartshark
+```
+
+
 
 ## Results
 
