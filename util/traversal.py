@@ -14,8 +14,10 @@ from util.tracking import GlobalState, PathState
 
 class Traversal:
 
-    def __init__(self, project_path, check_files, log, to_date, bug_keywords, quality_keywords=None, connector=False):
+    def __init__(self, project_path, check_files, log, to_date, bug_keywords, is_test=False, quality_keywords=None, connector=False):
         self.project_path = project_path
+        if not self.project_path.endswith('/'):
+            self.project_path += '/'
         self.to_date = to_date
         self.extensions = [".java"]  # ".pm"
         self.keywords = bug_keywords
@@ -24,6 +26,7 @@ class Traversal:
         self._connector = connector
         self._log = log
         self._quality_keywords = {}
+        self._is_test = is_test
         if quality_keywords:
             self._quality_keywords = quality_keywords
 
@@ -31,7 +34,8 @@ class Traversal:
 
         # checkout current default branch (origin/HEAD)
         gr = GitRepository(self.project_path)
-        gr.repo.git.checkout(gr.repo.refs['origin/HEAD'].commit.hexsha, '--force')
+        if not self._is_test:
+            gr.repo.git.checkout(gr.repo.refs['origin/HEAD'].commit.hexsha, '--force')
 
         # build graph
         g = nx.DiGraph()
@@ -47,8 +51,11 @@ class Traversal:
             if not commit.parents:
                 orphan_candidates.append(commit.hash)
 
-        # get origin/head and all branches
-        origin_tip = gr.repo.refs['origin/HEAD'].commit.hexsha
+        # get origin/head and all branches (except for test where we only have local repos)
+        if not self._is_test:
+            origin_tip = gr.repo.refs['origin/HEAD'].commit.hexsha
+        if self._is_test:
+            origin_tip = gr.repo.refs['master'].commit.hexsha
         branches = []
         for r in gr.repo.refs:
             if r.commit.hexsha != origin_tip:
@@ -578,5 +585,6 @@ class Traversal:
                 if java_filename_filter(rel_filepath, production_only=False):
                     result.add(rel_filepath)
 
-        gr2.repo.git.checkout(gr2.repo.refs['origin/HEAD'].commit.hexsha, '--force')
+        if not self._is_test:
+            gr2.repo.git.checkout(gr2.repo.refs['origin/HEAD'].commit.hexsha, '--force')
         return result
