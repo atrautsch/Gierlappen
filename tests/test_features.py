@@ -25,7 +25,7 @@ log = logging.getLogger()
 
 class TestFeatures(unittest.TestCase):
 
-    def test_lines(self):
+    def test_basic_jit_features(self):
         """Test line count adding."""
         with tempfile.TemporaryDirectory() as tmpdirname:
             r = subprocess.run(['/bin/bash', './tests/scripts/features.sh', '{}'.format(tmpdirname)], stdout=subprocess.PIPE)
@@ -48,6 +48,9 @@ class TestFeatures(unittest.TestCase):
             # first author introdouced Main.java and is its owner, second author not
             self.assertTrue(files[0]['own'])
             self.assertFalse(files[1]['own'])
+
+            # after editing the file has two authors
+            self.assertEqual(files[1]['ddev'], 2)
 
             # age is retained after rename
             # age is the number of days after the last change

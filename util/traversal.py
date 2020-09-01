@@ -90,8 +90,8 @@ class Traversal:
         paths = {}
         for path in c.all_paths():  # a path is a list of revision_hashes
             if i in paths.keys():
-                self._log.error('path {} already existing!')
-                raise
+                self._log.error('path %s already existing!', i)
+                raise Exception('path {} already existing!'.format(i))
             paths[i] = deque(reversed(path))
             needs_cache.add(path[-1])  # we only need to cache the first
             path_state[i] = PathState(self._log)  # change states are held per path
@@ -123,12 +123,12 @@ class Traversal:
                     parent = next(g.predecessors(path[-1]))
                     path.append(parent)
                     if path[-1] not in need_commits:
-                        self._log.error('additional branch path {}, first commit {} not in existing path!'.format(i, path[-1]))
-                        raise  # this is critical
+                        self._log.error('additional branch path %s, first commit %s not in existing path!', i, path[-1])
+                        raise Exception('additional branch path {}, first commit {} is not in existing path'.format(i, path[-1])) # this is critical
 
                 if i in paths.keys():
-                    self._log.error('path {} already existing!')
-                    raise
+                    self._log.error('path %s already existing!', i)
+                    raise Exception('path {} already existing'.format(i))
 
                 paths[i] = deque(reversed(path))
                 needs_cache.add(path[-1])  # we only need to cache the first
