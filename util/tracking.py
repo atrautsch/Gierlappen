@@ -184,7 +184,7 @@ class GlobalState:
             name = self.aliases[original_name]
             subsystem = self.get_subsystem(original_name)
 
-            tmp = {'commit': commit.hash, 'committer_date': commit.committer_date, 'file': original_name}
+            tmp = {'commit': commit.hash, 'committer_date': commit.committer_date, 'file': original_name, 'change_type': str(change_type)}
             tmp['comm'] = len(self.files[name]['commits'])
             tmp['adev'] = len(self.files[name]['authors'].keys())
             tmp['ddev'] = len(set(self.files[name]['authors'].keys()))
