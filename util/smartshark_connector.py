@@ -406,7 +406,7 @@ class SmartSharkConnector():
             pass
 
         if parent_ces:
-            parent_subfile_metrics = self.get_subfile_metrics(parent, parent_ces)
+            parent_subfile_metrics = self._get_subfile_metrics(parent, parent_ces)
 
             for m in STATIC:
                 if m in parent_ces.metrics.keys():
@@ -420,7 +420,7 @@ class SmartSharkConnector():
                 ret['parent_WD'] = sum(w['sum'] for w in wl) / ret['parent_LLOC']
 
         if current_ces:
-            current_subfile_metrics = self.get_subfile_metrics(commit, current_ces)
+            current_subfile_metrics = self._get_subfile_metrics(commit, current_ces)
 
             for m in STATIC:
                 if m in current_ces.metrics.keys():
