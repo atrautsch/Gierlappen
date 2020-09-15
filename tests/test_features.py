@@ -26,7 +26,7 @@ log = logging.getLogger()
 class TestFeatures(unittest.TestCase):
 
     def test_basic_jit_features(self):
-        """Test line count adding."""
+        """Test basic jit features, lines added, deleted, ownership, authors as well as age."""
         with tempfile.TemporaryDirectory() as tmpdirname:
             r = subprocess.run(['/bin/bash', './tests/scripts/features.sh', '{}'.format(tmpdirname)], stdout=subprocess.PIPE)
             self.assertEqual(r.returncode, 0)
