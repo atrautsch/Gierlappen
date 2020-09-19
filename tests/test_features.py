@@ -25,6 +25,32 @@ log = logging.getLogger()
 
 class TestFeatures(unittest.TestCase):
 
+    def test_complex_jit_features(self):
+        """Test the more complex jit features.
+
+            nd = number of 
+            sctr
+
+        """
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            r = subprocess.run(['/bin/bash', './tests/scripts/features.sh', '{}'.format(tmpdirname)], stdout=subprocess.PIPE)
+            self.assertEqual(r.returncode, 0)
+
+            keywords = ["fix"]
+            to_date = datetime.datetime(2020, 12, 31, 23, 59, 59)
+
+            t = Traversal(tmpdirname, True, log, to_date, keywords, is_test=True)
+            files = t.start()
+            pprint(files)
+
+            # self.assertEqual(files[0]['lt'])
+            # self.assertEqual(files[0]['la'], 5)  # add 5 lines in first commit and file
+            # self.assertEqual(files[1]['la'], 1)
+            # self.assertEqual(files[1]['ld'], 1)
+            # self.assertEqual(files[1]['file'], 'Main.java')
+         
+
     def test_basic_jit_features(self):
         """Test basic jit features, lines added, deleted, ownership, authors as well as age."""
         with tempfile.TemporaryDirectory() as tmpdirname:
