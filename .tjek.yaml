@@ -1,0 +1,19 @@
+pipeline:
+    language: python
+    image: python-runner-ubuntu
+    commands:
+        - wget https://github.com/pmd/pmd/releases/download/pmd_releases%2F6.31.0/pmd-bin-6.31.0.zip > /dev/null 2>&1
+        - unzip pmd-bin-6.31.0.zip -d ./checks/ > /dev/null 2>&1
+        - mv checks/pmd-bin-6.31.0/* ./checks/pmd/
+        - python3 -m venv .
+        - source bin/activate
+        - pip install wheel
+        - pip install -r requirements.txt
+        - coverage run -m unittest
+        - coverage report > coverage.log
+        - pylint --score no --output-format text --msg-template {path}:{line}:{column}:{category}:{msg} util connectors adapters > pylint.log
+    reports:
+      coverage:
+        file: coverage.log
+      pylint:
+        file: pylint.log

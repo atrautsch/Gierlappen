@@ -1,0 +1,248 @@
+{
+    "collections": [
+        {
+            "model": "People",
+            "documents": [
+                {
+                    "id": "user1",
+                    "name": "TestAutor",
+                    "email": "test@test.de"
+                }
+            ]
+        },
+        {
+            "model": "Identity",
+            "documents": [
+                {
+                    "id": "identity1",
+                    "people": ["{user1}"]
+                }
+            ]
+        },
+        {
+            "model": "Project",
+            "documents": [
+                {
+                    "id": "project1",
+                    "name": "Testproject"
+                }
+            ]
+        },
+        {
+            "model": "VCSSystem",
+            "documents": [
+                {
+                    "id": "vcs1",
+                    "project_id": "{project1}",
+                    "repository_type": "git",
+                    "url": "http://www.github.com/smartshark/visualSHARK"
+                }
+            ]
+        },
+        {
+            "model": "IssueSystem",
+            "documents": [
+                {
+                    "id": "iss1",
+                    "project_id": "{project1}",
+                    "url": "http://www.github.com/smartshark/visualSHARK/issues"
+                }
+            ]
+        },
+        {
+            "model": "Issue",
+            "documents": [
+                {
+                    "id": "is1",
+                    "issue_system_id": "{iss1}",
+                    "external_id": "IS-1",
+                    "title": "test fix 1",
+                    "issue_type_verified": "bug",
+                    "resolution": "fixed",
+                    "status": "closed"
+                }
+            ]
+        },
+        {
+            "model": "File",
+            "documents": [
+                {
+                    "id": "file1",
+                    "vcs_system_id": "{vcs1}",
+                    "path": "A/A.java"
+                },
+                {
+                    "id": "file2",
+                    "vcs_system_id": "{vcs1}",
+                    "path": "B/B.java"
+                },
+                {
+                    "id": "file3",
+                    "vcs_system_id": "{vcs1}",
+                    "path": "C/C.java"
+                },
+                {
+                    "id": "file4",
+                    "vcs_system_id": "{vcs1}",
+                    "path": "D/D.java"
+                }
+            ]
+        },
+        {
+            "model": "Commit",
+            "documents": [
+                {
+                    "id": "commit1",
+                    "vcs_system_id": "{vcs1}",
+                    "revision_hash": "hash1",
+                    "message": "reading1",
+                    "committer_date": "2018-01-01 01:01:01 +0200",
+                    "author_id": "{user1}"
+                },
+                {
+                    "id": "commit2",
+                    "vcs_system_id": "{vcs1}",
+                    "revision_hash": "hash2",
+                    "message": "reading2",
+                    "committer_date": "2018-01-15 01:01:01 +0200",
+                    "parents": ["hash1"],
+                    "author_id": "{user1}"
+                },
+                {
+                    "id": "commit3",
+                    "vcs_system_id": "{vcs1}",
+                    "revision_hash": "hash3",
+                    "message": "reading3",
+                    "committer_date": "2018-02-01 01:01:01 +0200",
+                    "parents": ["hash2"],
+                    "author_id": "{user1}"
+                },
+                {
+                    "id": "commit4",
+                    "vcs_system_id": "{vcs1}",
+                    "revision_hash": "hash4",
+                    "message": "reading4 - release",
+                    "committer_date": "2018-02-15 01:01:01 +0200",
+                    "parents": ["hash3"],
+                    "author_id": "{user1}"
+                },
+                {
+                    "id": "commit5",
+                    "vcs_system_id": "{vcs1}",
+                    "revision_hash": "hash5",
+                    "message": "post release fix IS-1",
+                    "committer_date": "2018-02-18 01:01:01 +0200",
+                    "parents": ["hash4"],
+                    "author_id": "{user1}",
+                    "labels": {"validated_bugfix": true}
+                }
+            ]
+        },
+        {
+            "model": "FileAction",
+            "documents": [
+                {
+                    "id": "fileaction1",
+                    "file_id": "{file1}",
+                    "commit_id": "{commit1}",
+                    "mode": "A",
+                    "lines_added": 3,
+                    "lines_deleted": 0
+                },
+                {
+                    "id": "fileaction2",
+                    "file_id": "{file4}",
+                    "commit_id": "{commit1}",
+                    "mode": "A",
+                    "lines_added": 3,
+                    "lines_deleted": 0,
+                    "induces": [{"change_file_action_id": "DUMMY1", "label": "JLMIV+R", "szz_type": "inducing"}]
+                },
+                {
+                    "id": "fileaction3",
+                    "file_id": "{file1}",
+                    "commit_id": "{commit2}",
+                    "mode": "M",
+                    "lines_added": 3,
+                    "lines_deleted": 2
+                },
+                {
+                    "id": "fileaction4",
+                    "file_id": "{file3}",
+                    "commit_id": "{commit2}",
+                    "mode": "R",
+                    "lines_added": 0,
+                    "lines_deleted": 0,
+                    "old_file_id": "{file4}"
+                },
+                {
+                    "id": "fileaction4",
+                    "file_id": "{file1}",
+                    "commit_id": "{commit3}",
+                    "mode": "M",
+                    "lines_added": 3,
+                    "lines_deleted": 2
+                },
+                {
+                    "id": "fileaction5",
+                    "file_id": "{file2}",
+                    "commit_id": "{commit3}",
+                    "mode": "R",
+                    "lines_added": 0,
+                    "lines_deleted": 0,
+                    "old_file_id": "{file3}"
+                },
+                {
+                    "id": "fileaction6",
+                    "file_id": "{file1}",
+                    "commit_id": "{commit4}",
+                    "mode": "M",
+                    "lines_added": 3,
+                    "lines_deleted": 2
+                },
+                {
+                    "id": "fileaction7",
+                    "file_id": "{file2}",
+                    "commit_id": "{commit4}",
+                    "mode": "M",
+                    "lines_added": 3,
+                    "lines_deleted": 2,
+                    "induces": [{"change_file_action_id": "DUMMY2", "label": "JLMIV+R", "szz_type": "partial_fix"}]
+                },
+                {
+                    "id": "fileaction8",
+                    "file_id": "{file2}",
+                    "commit_id": "{commit5}",
+                    "mode": "M",
+                    "lines_added": 3,
+                    "lines_deleted": 2
+                }
+            ]
+        },
+        {
+            "model": "CodeEntityState",
+            "documents": [
+                {
+                    "id": "ces1",
+                    "s_key": "CESFILEARELEASE",
+                    "long_name": "A/A.java",
+                    "commit_id": "{commit4}",
+                    "file_id": "{file1}",
+                    "ce_type": "file",
+                    "start_line": 0,
+                    "end_line": 0
+                },
+                {
+                    "id": "ces2",
+                    "s_key": "CESFILEBRELEASE",
+                    "long_name": "B/B.java",
+                    "commit_id": "{commit4}",
+                    "file_id": "{file2}",
+                    "ce_type": "file",
+                    "start_line": 0,
+                    "end_line": 0
+                }
+            ]
+        }
+    ]
+}

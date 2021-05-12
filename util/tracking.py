@@ -1,9 +1,10 @@
+"""Track files and hold state. State includes all metrics for files and authors."""
+
 import copy
+import logging
 
 import numpy as np
 from pydriller.domain.commit import ModificationType
-
-from pycoshark.utils import java_filename_filter
 
 
 class PathState:
@@ -12,11 +13,10 @@ class PathState:
     If the file is renamed due to a move we also rename it in our state.
     """
 
-    def __init__(self, log, files=None):
+    def __init__(self, files=None):
         self.files = {}
         if files:
             self.files = files
-        self._log = log
 
     def add_file(self, name):
         if name in self.files.keys():
@@ -36,9 +36,9 @@ class PathState:
 
     def move_file(self, old_name, new_name):
         if old_name not in self.files.keys():
-            raise Exception('Move: {}->{} {} does not exist'.format(old_name, new_name, old_name))
+            raise Exception('Move: {0}->{1} {0} does not exist'.format(old_name, new_name))
         if new_name in self.files.keys():
-            raise Exception('Move: {}->{} {} already existing'.format(old_name, new_name, new_name))
+            raise Exception('Move: {0}->{1} {1} already existing'.format(old_name, new_name))
         self.files[new_name] = copy.deepcopy(self.files[old_name])
         del self.files[old_name]
 
@@ -49,14 +49,45 @@ class GlobalState:
     We accumulate data for each file and calculate features from the accumulated data.
     """
 
-    def __init__(self, log, bug_keywords, quality_keywords):
+    def __init__(self, config):
+        self._config = config
         self.files = {}
         self.aliases = {}
         self.authors = {}
-        self._log = log
-        self._quality_keywords = quality_keywords
-        self._bug_keywords = bug_keywords
+        self.commits = {}  # commit level features are collected here
+        self._project_path = config.path
+        self._quality_keywords = config.quality_keywords
+        self._bug_keywords = config.keywords
         self.quality = {}
+        self.production_only = config.production_only
+        self._build_information = {}
+        self._sm_con = False
+        self._pmd_con = False
+        self._build_con = False
+        self._wd_cache = {}
+
+        self.metrics = []
+
+        self._its_inducing = {}
+        self._adhoc_inducing = {}
+        self._inducing_commits = set()
+        self._inducing_files = set()
+
+        self._log = logging.getLogger('jit.gstate')
+
+    def __setstate__(self, state):
+        """We need to re-set the _pmd_con"""
+        self.__dict__ = state
+        self._pmd_con = False
+
+    def __getstate__(self):
+        """We exclude possible sqlite database connections here from pickling to the state file.
+        This needs some more work. Some of this information is saved in more places,
+        e.g., project_path already in Config.
+        """
+        state = self.__dict__.copy()
+        del state['_pmd_con']
+        return state
 
     def get_author(self, commit):
         return commit.author.email
@@ -64,41 +95,71 @@ class GlobalState:
     def get_subsystem(self, filepath):
         return '/'.join(filepath.split('/')[:-1])
 
-    def add_commit(self, commit, inducings, inducing_commits, inducing_files, its_inducings, smcon=None):
+    def set_its_inducing(self, label, inducings):
+        self._its_inducing[label] = inducings
+
+    def set_inducing_files(self, inducing_files):
+        self._inducing_files = inducing_files
+
+    def set_adhoc_inducing(self, inducings):
+        self._adhoc_inducing = inducings
+
+    def set_inducing_commits(self, inducing_commits):
+        self._inducing_commits = inducing_commits
+
+    def set_linter_connector(self, pmd_con):
+        self._pmd_con = pmd_con
+
+    def set_build_connector(self, build_con):
+        self._build_con = build_con
+
+    def set_smartshark_connector(self, sm_con):
+        self._sm_con = sm_con
+
+    def add_author(self, commit):
         author = self.get_author(commit)
 
         if author not in self.authors.keys():
-            self.authors[author] = {'subsystems': {}, 'changes': [], 'years': {}, 'files': {}, 'lines': 0, 'nsctr': {}, 'wd': []}
+            self.authors[author] = {'subsystems': {}, 'changes': [], 'years': {}, 'files': {}, 'lines': 0, 'nsctr': {}, 'wd': [], 'commits': set()}
 
         self.authors[author]['changes'].append(commit.committer_date)
+        self.authors[author]['commits'].add(commit.hash)
 
         year = commit.committer_date.year
         if year not in self.authors[author]['years']:
             self.authors[author]['years'][year] = 0
         self.authors[author]['years'][year] += 1
 
+    def add_commit(self, commit):
+
+        # add author related stuff
+        self.add_author(commit)
+
+        # reset metrics
         self.metrics = []
-        self.inducings = inducings
-        self.inducing_commits = inducing_commits
-        self.inducing_files = inducing_files
 
         # create real modification list, this may be different to the one provided by pydriller
         self.modifications = []
+        hunks = {}
         for mod in commit.modifications:
             if mod.change_type is not ModificationType.RENAME:
-                if mod.new_path and not java_filename_filter(mod.new_path, production_only=False):
+                if mod.new_path and not self._config.filename_filter(mod.new_path):
                     continue
-                if mod.old_path and not java_filename_filter(mod.old_path, production_only=False):
+                if mod.old_path and not self._config.filename_filter(mod.old_path):
                     continue
+
+            added_line_numbers = [lno for lno, ls in mod.diff_parsed['added']]
+            deleted_line_numbers = [lno for lno, ls in mod.diff_parsed['deleted']]
+
             if mod.change_type is ModificationType.RENAME:
-                if not java_filename_filter(mod.new_path, production_only=False) and java_filename_filter(mod.old_path, production_only=False):
-                    self.modifications.append((ModificationType.DELETE, mod.new_path, mod.old_path, mod.added, mod.removed, mod.nloc))
-                if not java_filename_filter(mod.old_path, production_only=False) and java_filename_filter(mod.new_path, production_only=False):
-                    self.modifications.append((ModificationType.ADD, mod.new_path, mod.old_path, mod.added, mod.removed, mod.nloc))
-                if java_filename_filter(mod.old_path, production_only=False) and java_filename_filter(mod.new_path, production_only=False):
-                    self.modifications.append((mod.change_type, mod.new_path, mod.old_path, mod.added, mod.removed, mod.nloc))
+                if not self._config.filename_filter(mod.new_path) and self._config.filename_filter(mod.old_path):
+                    self.modifications.append((ModificationType.DELETE, mod.new_path, mod.old_path, mod.added, mod.removed, mod.nloc, added_line_numbers, deleted_line_numbers))
+                if not self._config.filename_filter(mod.old_path) and self._config.filename_filter(mod.new_path):
+                    self.modifications.append((ModificationType.ADD, mod.new_path, mod.old_path, mod.added, mod.removed, mod.nloc, added_line_numbers, deleted_line_numbers))
+                if self._config.filename_filter(mod.old_path) and self._config.filename_filter(mod.new_path):
+                    self.modifications.append((mod.change_type, mod.new_path, mod.old_path, mod.added, mod.removed, mod.nloc, added_line_numbers, deleted_line_numbers))
             else:
-                self.modifications.append((mod.change_type, mod.new_path, mod.old_path, mod.added, mod.removed, mod.nloc))
+                self.modifications.append((mod.change_type, mod.new_path, mod.old_path, mod.added, mod.removed, mod.nloc, added_line_numbers, deleted_line_numbers))
 
         # try to find missing renames
         adds = []
@@ -111,19 +172,26 @@ class GlobalState:
         for a in adds:
             for d in dels:
                 if a.split('/')[-1] == d.split('/')[-1]:
-                    self._log.debug('[{}] possible rename: {} -> {}'.format(commit.hash, d, a))
+                    self._log.debug('[%s] possible rename: %s -> %s', commit.hash, d, a)
+
+        # build stuff, needs commit
+        if self._build_con:
+            self._build_con.add_commit(commit)
 
         # smartshark metrics if available
-        self.smartshark_labels = its_inducings
-        self.smcon = smcon
-        self.current_system_wd = 0
-        if self.smcon:
-            self._log.warning('getting warning density for {}'.format(commit.hash))
-            self.current_system_wd = self.smcon.get_warning_density(str(commit.hash))
+        # self.smartshark_labels = its_inducings
+        # self.current_system_wd = 0
+        # if self._sm_con and not self._pmd_con:
+            # # self._log.debug('[%s] getting warning density', commit.hash)
+            # self.current_system_wd = self._sm_con.get_warning_density(str(commit.hash))
 
-        self.parent_system_wd = 0
-        if commit.parents and self.smcon:
-            self.parent_system_wd = self.smcon.get_warning_density(commit.parents[0])
+        # self.parent_system_wd = 0
+        # if commit.parents and self._sm_con and not self._pmd_con:
+            # self.parent_system_wd = self._sm_con.get_warning_density(commit.parents[0])
+
+        # the dream: offload the hideous calculations to the pmd connector
+        if self._pmd_con:
+            self._pmd_con.add_commit(self, commit)
 
         # add quality keywords if available
         if self._quality_keywords:
@@ -175,7 +243,69 @@ class GlobalState:
     def calculate_metrics(self, commit):
         current_year = commit.committer_date.year
         author = self.get_author(commit)
-        for change_type, new_path, old_path, added, removed, nloc in self.modifications:
+        subsystems = self.get_modified_subsystems(commit)
+        directories = self.get_modified_directories(commit)
+        lines = self.get_modified_lines(commit)
+        all_added = sum([m.added for m in commit.modifications])
+        all_removed = sum([m.removed for m in commit.modifications])
+        all_loc = sum([m.nloc for m in commit.modifications if m.nloc is not None])
+        is_bugfix = any(word in commit.msg.lower() for word in self._bug_keywords)
+
+        ctmp = {'kamei_ns': len(subsystems),
+                'kamei_nd': len(directories),
+                'kamei_nf': len(commit.modifications),
+                'kamei_entropy': 0,
+                'kamei_la': all_added,
+                'kamei_ld': all_removed,
+                'kamei_lt': all_loc + all_removed - all_added,
+                'kamei_fix': is_bugfix,
+                'kamei_ndev': set(),
+                'kamei_age': [],
+                'kamei_nuc': set(),
+                'kamei_exp': len(self.authors[author]['commits']),
+                'kamei_sexp': 0,
+                'kamei_rexp': 0}
+        all_lines = sum(lines)
+
+        if all_lines > 0:
+            ctmp['kamei_entropy'] = -sum([line/all_lines * np.log2(line/all_lines) for line in lines if line > 0])
+
+        # this is duplicated for simplicity in this awful code
+        for change_type, new_path, old_path, added, removed, nloc, _, _ in self.modifications:
+
+            original_name = new_path
+            if change_type is ModificationType.DELETE:
+                original_name = old_path
+
+            if not self._config.filename_filter(original_name):
+                continue
+
+            name = self.aliases[original_name]
+            subsystem = self.get_subsystem(original_name)
+
+            # commit-level jit also needs some history metrics
+            ctmp['kamei_ndev'].update(self.files[name]['authors'].keys())
+            last_change = 0
+            if len(self.files[name]['dates']) > 1:
+                last_change = (commit.committer_date - self.files[name]['dates'][-2]).days
+            ctmp['kamei_age'].append(last_change)
+            ctmp['kamei_nuc'].update(set(self.files[name]['commits']))
+            for year, changes in self.authors[author]['years'].items():
+                if year <= commit.committer_date.year:
+                    ctmp['kamei_rexp'] += changes / (commit.committer_date.year - year + 1)
+                else:
+                    ctmp['kamei_rexp'] += changes / (year - commit.committer_date.year + 1)  # this can happen if some commits have a different date than parent or the author worked on another branch
+
+            if subsystem in self.authors[author]['subsystems'].keys():
+                ctmp['kamei_sexp'] += len(set(self.authors[author]['subsystems'][subsystem]))
+
+        ctmp['kamei_ndev'] = len(ctmp['kamei_ndev'])
+        if len(ctmp['kamei_age']) > 0:
+            ctmp['kamei_age'] = np.mean(ctmp['kamei_age'])
+        ctmp['kamei_nuc'] = len(ctmp['kamei_nuc'])
+
+        # fine grained jit
+        for change_type, new_path, old_path, added, removed, nloc, _, _ in self.modifications:
 
             original_name = new_path
             if change_type is ModificationType.DELETE:
@@ -184,15 +314,13 @@ class GlobalState:
             name = self.aliases[original_name]
             subsystem = self.get_subsystem(original_name)
 
-            tmp = {'commit': commit.hash, 'committer_date': commit.committer_date, 'file': original_name, 'change_type': str(change_type)}
+            tmp = {'commit': commit.hash, 'committer_date': commit.committer_date, 'file': original_name, 'oldest_name': name,'change_type': str(change_type)}
             tmp['comm'] = len(self.files[name]['commits'])
             tmp['adev'] = len(self.files[name]['authors'].keys())
             tmp['ddev'] = len(set(self.files[name]['authors'].keys()))
             tmp['add'] = 0
             tmp['del'] = 0
 
-            all_added = sum([m.added for m in commit.modifications])
-            all_removed = sum([m.removed for m in commit.modifications])
             if all_added > 0:
                 tmp['add'] = added / all_added
             if all_removed > 0:
@@ -205,14 +333,14 @@ class GlobalState:
 
             tmp['minor'] = 0
             all_changes = sum(self.files[name]['authors'].values())
-            for author, contributed in self.files[name]['authors'].items():
+            for _, contributed in self.files[name]['authors'].items():
                 if contributed < (0.05 * all_changes):
                     tmp['minor'] += 1
 
-            tmp['sctr'] = len(self.get_modified_subsystems(commit))
-            tmp['nd'] = len(self.get_modified_directories(commit))
+            tmp['sctr'] = len(subsystems)
+            tmp['nd'] = len(directories)
 
-            entropy = self.get_modified_lines(commit)
+            entropy = lines
             tmp['entropy'] = 0
             if sum(entropy) > 0:
                 tmp['entropy'] = -sum([a / sum(entropy) * np.log2(a / sum(entropy)) for a in entropy if a > 0])
@@ -259,22 +387,21 @@ class GlobalState:
             tmp['nadev'] = []
             tmp['nddev'] = set()
             for m in commit.modifications:
-
                 neighbor = m.new_path
                 if m.change_type is ModificationType.DELETE:
                     neighbor = m.old_path
 
-                if not java_filename_filter(neighbor, production_only=False):
+                if not self._config.filename_filter(neighbor):
                     continue
 
                 if neighbor == original_name:
                     continue
 
                 neighbor = self.aliases[neighbor]
-                if neighbor in self.files[neighbor].keys():
-                    tmp['ncomm'].add(tuple(self.files[neighbor]['commits']))
+                if neighbor in self.files.keys():
+                    tmp['ncomm'].update(tuple(self.files[neighbor]['commits']))
                     tmp['nadev'] += list(self.files[neighbor]['authors'].keys())
-                    tmp['nddev'].add(tuple(self.files[neighbor]['authors'].keys()))
+                    tmp['nddev'].update(tuple(self.files[neighbor]['authors'].keys()))
 
             tmp['ncomm'] = len(tmp['ncomm'])
             tmp['nadev'] = len(tmp['nadev'])
@@ -287,32 +414,39 @@ class GlobalState:
                 parent = commit.parents[0]
 
             # if we have the smartshark connector we update our features accordingly
-            if self.smcon:
-                tmp.update(**self.smcon.get_static_features(original_name, commit.hash, parent))
+            if self._sm_con:
+                tmp['validated_bugfix'] = False
+                # TODO: this throws errors if we do not yet have the commit, make sure we are in our date range
+                if commit.committer_date <= self._config.to_date.replace(tzinfo=commit.committer_date.tzinfo):
+                    self._log.debug('committer date %s <= to_date %s', commit.committer_date, self._config.to_date)
+                    # We skip all metrics if we do not have the smartshark data, otherwise we would have missing features
+                    try:
+                        tmp.update(**self._sm_con.get_static_features(original_name, commit.hash, parent))
+                        self._log.warning('commit %s not ins smartshark database, skipping', commit.hash)
+                    except:
+                        return
+                    needle = '{}__{}'.format(commit.hash, original_name)
+                    if needle in self._sm_con.bugfixes:
+                        tmp['validated_bugfix'] = True
 
-            # file changes in warning density, only available wit hsmartshark
-            if self.current_system_wd:
-                self.files[name]['wd'].append(tmp['current_WD'] - self.current_system_wd)
-                tmp['system_WD'] = self.current_system_wd
-                tmp['file_system_sum_WD'] = sum(self.files[name]['wd'])
-                tmp['author_delta_sum_WD'] = sum(self.authors[author]['wd'])
+            # pmd stuff
+            if self._pmd_con:
+                pmd = self._pmd_con.get_file_metrics(self, author, name, original_name, change_type == ModificationType.DELETE)
+                tmp.update(**pmd)
+
             tmp['previous_inducing'] = self.files[name]['previous_inducing']
 
             # add labels
-            tmp['fix_bug'] = False
-            msg = commit.msg.lower()
-            if any(word in msg for word in self._bug_keywords):
-                tmp['fix_bug'] = True
+            tmp['fix_bug'] = is_bugfix
 
             k = '{}__{}'.format(commit.hash, original_name)
-            tmp['label_adhoc'] = self.inducings.get(k, [])
+            tmp['label_adhoc'] = self._adhoc_inducing.get(k, [])
 
-            if self.smartshark_labels:
-                tmp['label_bug'] = self.smartshark_labels.get(k, [])
-
+            for label, inducing in self._its_inducing.items():
+                tmp['label_{}'.format(label)] = inducing.get(k, [])
             # only for comparison with pascarella
-            tmp['pascarella_commit'] = commit.hash in self.inducing_commits
-            tmp['pascarella_file'] = '{}$${}'.format(commit.hash, original_name) in self.inducing_files
+            tmp['pascarella_commit'] = commit.hash in self._inducing_commits
+            tmp['pascarella_file'] = '{}$${}'.format(commit.hash, original_name) in self._inducing_files
 
             # lets see how this works, we count inducing changes for each file
             if tmp['label_adhoc']:
@@ -327,12 +461,19 @@ class GlobalState:
                 # only commit, no aggregation
                 tmp['quality_{}_commit'.format(topic)] = self.quality[topic]
 
+            tmp.update(**ctmp)
+
+            # add build information to metrics
+            if self._build_con:
+                btmp = self._build_con.get_file_metrics(original_name)
+                tmp.update(**btmp)
+
             self.metrics.append(tmp)
 
     def add_file_state(self, name, original_name, commit, mod):
         subsystem = self.get_subsystem(original_name)
         author = self.get_author(commit)
-
+        subsystems = self.get_modified_subsystems(commit)
         self.authors[author]['lines'] += mod.added + mod.removed
         if name not in self.authors[author]['files']:
             self.authors[author]['files'][name] = 0
@@ -344,7 +485,7 @@ class GlobalState:
 
         if name not in self.authors[author]['nsctr']:
             self.authors[author]['nsctr'][name] = set()
-        self.authors[author]['nsctr'][name].add(subsystem)
+        self.authors[author]['nsctr'][name].update(subsystems)
 
         # file stuff
         if len(commit.modifications) == 1:
@@ -356,10 +497,6 @@ class GlobalState:
 
         self.files[name]['commits'].append(commit.hash)
         self.files[name]['dates'].append(commit.committer_date)
-
-        # authors change in warning density
-        if self.current_system_wd:
-            self.authors[author]['wd'].append(self.current_system_wd - self.parent_system_wd)
 
         # add quality factors
         for topic, value in self.quality.items():
@@ -406,7 +543,7 @@ class GlobalState:
 
         warn = False
         if new_name in self.aliases.keys() and self.aliases[new_name] != old_name:
-            self._log.warning('Move {}->{} Missmatch: {}!={} in aliases'.format(old_name, new_name, self.aliases[new_name], old_name))
+            self._log.warning('Move %s->%s Missmatch: %s!=%s in aliases', old_name, new_name, self.aliases[new_name], old_name)
             warn = True
         # follow old aliases to the oldest name to get the file reference
         while old_name in self.aliases.keys() and self.aliases[old_name] != old_name:
@@ -415,7 +552,7 @@ class GlobalState:
         self.aliases[new_name] = old_name
 
         if warn:
-            self._log.warning('Move final is now {} -> {}'.format(new_name, old_name))
+            self._log.warning('Move final is now %s -> %s', new_name, old_name)
 
         # author stuff
         self.add_file_state(self.aliases[new_name], new_name, commit, mod)
